@@ -2,7 +2,8 @@
 
 The Squircle Labs API. It handles everything on [squircle.london](https://squircle.london) that needs a server:
 
-- **Accounts.** People sign up and sign in with Apple or Google. This will later cover Manuscript subscriptions and template uploads.
+- **Accounts.** People sign up and sign in with Apple or Google. This will later cover Manuscript subscriptions.
+- **Community templates.** People share their own templates. Squircle Labs reviews each one before it appears in the gallery.
 - **Admin.** A separate sign-in, by invitation only. It holds the Newsroom editor for now.
 - **The Newsroom.** It renders static pages and publishes them to the website's repository.
 
@@ -35,6 +36,15 @@ all the runtime dependencies.
 | `/admin/newsroom/articles[/:id][/publish\|/unpublish\|/preview]` | admin | Stories. |
 | `POST /admin/newsroom/uploads`, `POST /admin/newsroom/render` | admin | Images and Markdown preview. |
 | `GET /media/:name` | anyone | Images for drafts, before they're published to the site. |
+| `GET · POST /me/templates` | user | Your templates; upload one (the file is the body, `?name=` its file name). |
+| `GET · PATCH · DELETE /me/templates/:id` | user | One template: title, description, category, tags, `usePlaceholder`. |
+| `GET /me/templates/:id/placeholder-sample` | user | The first paragraphs, before and after placeholder text. |
+| `GET /me/templates/:id/files/{original,placeholder,published}` | user | Your files. Only you can download the original. |
+| `POST · DELETE /me/templates/:id/previews[/:position][/cover]` | user | Preview images; the first is the cover. |
+| `POST /me/templates/:id/{submit,withdraw}` | user | Send for review (needs `{ confirm: true }`), or take it back. |
+| `GET /templates`, `GET /templates/:id/download` | anyone | The community gallery, and downloads (counted). |
+| `GET /admin/templates?status=…`, `GET /admin/templates/:id/file` | admin | The review queue, and the exact file that will be published. |
+| `POST /admin/templates/:id/{approve,decline}` | admin | Decide. Declining needs `{ note }`, which the creator sees. Declining a published template takes it down. |
 | `GET /health` | anyone | Render's health check. |
 
 ### Security
@@ -45,6 +55,36 @@ all the runtime dependencies.
 - **Writes:** CORS allows only `SITE_URL` (plus `EXTRA_ORIGINS`). Every write must carry an allowed `Origin`.
 - **Admin access:** only for emails on the team. `OWNER_EMAIL` is always an owner, so the team can't lock itself out. Add people with `npm run admin:add -- person@example.com editor`.
 - **Linked accounts:** a new Apple or Google login joins an existing account only when the provider has verified the email.
+
+## Community templates
+
+A template moves through four states:
+
+```text
+draft ──submit──▶ in review ──approve──▶ published
+  ▲                   │  ╲                    │
+  └──── withdraw ─────┘   ╲──decline──▶ declined ◀──decline (take down)──┘
+  (editing a declined template makes it a draft again)
+```
+
+- **Only drafts change.** A template in review or in the gallery is locked. Withdrawing it makes it a
+  draft again, so nobody can swap a file after it's approved.
+- **Uploads are checked from their contents, not their name.** Only real `.docx`, `.xlsx` and `.pptx`
+  files are accepted, up to 25 MB. Files with macros, ActiveX controls or embedded programs are refused,
+  and so are archives that unpack to more than 250 MB (zip bombs).
+- **Placeholder text** (`usePlaceholder`) keeps a second copy where every word is Lorem Ipsum of a similar
+  length and every digit is another digit. Capitals, punctuation and spacing are kept, and so is every
+  run, style, table and layout, because only the text inside `<w:t>`, `<a:t>` and `<t>` changes. The
+  same file always gets the same placeholder text. It covers body text, headers, footers, footnotes,
+  comments, speaker notes, charts and SmartArt, and also points external links at `example.com` and
+  clears the file's title, subject and keywords. Pictures, logos and numbers in spreadsheet cells
+  aren't changed; the editor says so.
+- **What gets published** is made when the creator submits: the original or the placeholder version,
+  with the author, last editor, company and the names on comments and tracked changes removed.
+  Reviewers download that exact file. The original only ever goes back to its creator.
+- **Storage.** Files are kept in the database, like Newsroom images. That's fine for a start; move them
+  to object storage (Cloudflare R2, for example) when the database grows past a few gigabytes.
+- Deleting an account deletes its templates, including published ones.
 
 ## Local development
 
@@ -165,11 +205,19 @@ because they never call the server. Render's Starter plan keeps the server awake
 - `https://squircle.london/account/`: sign up with Apple, then sign out and in with Google using the same email. Both appear under **Signs in with**.
 - `https://squircle.london/admin/`: sign in as `OWNER_EMAIL`, edit a story and press **Update**. A commit `newsroom: update “…”` appears on `main`, and the page updates about a minute later.
 
+## Database migrations
+
+Migrations live in `src/db/schema.ts` and are remembered **by name** in the `migrations` table, so
+features built on separate branches can each add their own without colliding. Never edit one that has
+shipped; add a new one. Databases created before named migrations had a `schema_version` table; their
+first migration is carried over automatically.
+
 ## Scripts
 
 | | |
 | --- | --- |
 | `npm run dev` | Local server, restarted on change |
+| `npm test` | Unit tests |
 | `npm run build` · `npm start` | Compile, then run (what Render does) |
 | `npm run admin:add -- email [editor\|owner]` | Invite someone to Admin |
 | `npm run newsroom:rebuild` | Republish every Newsroom page (after a template change) |
