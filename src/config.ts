@@ -92,7 +92,8 @@ export const BILLING =
   (env('BILLING_PROVIDER') ?? (IS_PRODUCTION ? 'stripe' : 'dev')) === 'stripe'
     ? {
         provider: 'stripe' as const,
-        secretKey: required('STRIPE_SECRET_KEY'),
+        // A restricted key (rk_…) with only the permissions listed in the README.
+        apiKey: required('STRIPE_API_KEY'),
         webhookSecret: required('STRIPE_WEBHOOK_SECRET'),
         priceId: required('STRIPE_PRICE_ID'),
         automaticTax: env('STRIPE_AUTOMATIC_TAX') === 'true',

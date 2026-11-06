@@ -4,8 +4,9 @@ import { after, describe, test } from 'node:test';
 import Stripe from 'stripe';
 
 import { API, Browser, stop } from '../test/harness.js';
-import { createStripeProvider, fromStripe } from './stripe.js';
-import { applyProviderSubscription, entitlementFor } from './subscriptions.js';
+import { createStripeProvider, fromStripe, handleStripeEvent } from './stripe.js';
+import { all, run } from '../db/client.js';
+import { applyProviderSubscription, entitlementFor, saveBillingCustomer } from './subscriptions.js';
 import type { ProviderSubscription } from './types.js';
 
 after(stop);
@@ -234,7 +235,7 @@ describe('Stripe', () => {
 
   test('only correctly signed webhooks are accepted', () => {
     const secret = 'whsec_test_secret';
-    const { parseWebhook } = createStripeProvider({ secretKey: 'sk_test_x', webhookSecret: secret, priceId: 'price_x', automaticTax: false });
+    const { parseWebhook } = createStripeProvider({ apiKey: 'rk_test_x', webhookSecret: secret, priceId: 'price_x', automaticTax: false });
     const payload = JSON.stringify({ id: 'evt_1', object: 'event', type: 'customer.subscription.updated', created: 1, data: { object: {} } });
     const signature = new Stripe('sk_test_x').webhooks.generateTestHeaderString({ payload, secret });
 
@@ -247,5 +248,72 @@ describe('Stripe', () => {
   test('the webhook endpoint is closed when Stripe isn’t configured', async () => {
     const response = await fetch(`${API}/billing/webhook`, { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } });
     assert.equal(response.status, 404);
+  });
+});
+
+describe('Stripe webhook events', () => {
+  const fay = new Browser();
+  let fayId = '';
+  let remote: Stripe.Subscription;
+
+  const stripeSub = (overrides: Record<string, unknown> = {}) =>
+    ({
+      id: 'sub_fay', customer: 'cus_fay', status: 'active', metadata: {}, cancel_at_period_end: false, cancel_at: null,
+      ended_at: null, items: { data: [{ quantity: 1, current_period_end: 1_796_000_000 }] }, ...overrides,
+    }) as unknown as Stripe.Subscription;
+
+  /** Stands in for the Stripe client: returns whatever "Stripe" currently says. */
+  const fake = {
+    subscriptions: { retrieve: async () => remote },
+    charges: { retrieve: async () => ({ id: 'ch_1', customer: 'cus_fay' }) },
+  } as never;
+
+  const event = (type: string, object: unknown, created = Math.floor(Date.now() / 1000)) =>
+    ({ id: `evt_${type}_${created}`, type, created, data: { object } }) as unknown as Stripe.Event;
+
+  test('setup: Fay has a Stripe customer but no subscription yet', async () => {
+    await fay.signIn('fay@example.com');
+    fayId = (await fay.json('/me')).body.user.id;
+    await saveBillingCustomer(fayId, 'stripe', 'cus_fay');
+  });
+
+  test('an unpaid checkout grants nothing', async () => {
+    remote = stripeSub({ status: 'incomplete' });
+    await handleStripeEvent(fake, event('checkout.session.completed', { mode: 'subscription', payment_status: 'unpaid', subscription: 'sub_fay' }));
+    assert.equal((await entitlementFor(fayId)).entitled, false);
+  });
+
+  test('a paid checkout grants access, matched through the Customer, not metadata', async () => {
+    remote = stripeSub({ metadata: { user_id: 'someone-else' } });
+    await handleStripeEvent(fake, event('checkout.session.completed', { mode: 'subscription', payment_status: 'paid', subscription: 'sub_fay' }));
+    const entitlement = await entitlementFor(fayId);
+    assert.equal(entitlement.entitled, true);
+    assert.equal(entitlement.source?.role, 'owner');
+  });
+
+  test('a failed renewal moves to the grace period; paying restores it', async () => {
+    remote = stripeSub({ status: 'past_due' });
+    const invoice = { parent: { subscription_details: { subscription: 'sub_fay' } } };
+    await handleStripeEvent(fake, event('invoice.payment_failed', invoice, Math.floor(Date.now() / 1000) + 10));
+    assert.equal((await entitlementFor(fayId)).source?.state, 'grace');
+
+    remote = stripeSub({ status: 'active' });
+    await handleStripeEvent(fake, event('invoice.paid', invoice, Math.floor(Date.now() / 1000) + 20));
+    assert.equal((await entitlementFor(fayId)).source?.state, 'active');
+  });
+
+  test('disputes, refunds and fraud warnings are kept for review, tied to the person', async () => {
+    await handleStripeEvent(fake, event('charge.dispute.created', { id: 'dp_1', charge: 'ch_1', amount: 999, currency: 'usd' }));
+    await handleStripeEvent(fake, event('charge.refunded', { id: 'ch_2', customer: 'cus_fay', amount_refunded: 999, currency: 'usd' }));
+    await handleStripeEvent(fake, event('radar.early_fraud_warning.created', { id: 'issfr_1', charge: 'ch_1' }));
+    const alerts = await all<{ type: string; user_id: string }>('SELECT type, user_id FROM billing_alerts WHERE customer_id = ? ORDER BY id', ['cus_fay']);
+    assert.deepEqual(alerts.map((a) => a.type), ['charge.dispute.created', 'charge.refunded', 'radar.early_fraud_warning.created']);
+    assert.ok(alerts.every((a) => a.user_id === fayId));
+    await run('DELETE FROM billing_alerts');
+  });
+
+  test('deletion ends access', async () => {
+    await handleStripeEvent(fake, event('customer.subscription.deleted', stripeSub({ status: 'canceled', ended_at: 1_790_000_100 }), Math.floor(Date.now() / 1000) + 30));
+    assert.equal((await entitlementFor(fayId)).entitled, false);
   });
 });

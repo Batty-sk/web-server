@@ -178,6 +178,21 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX app_sessions_user ON app_sessions (user_id);
   `,
+  // 4 — Disputes, refunds and fraud warnings on subscription payments
+  `
+  CREATE TABLE billing_alerts (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id         TEXT NOT NULL UNIQUE,
+    type             TEXT NOT NULL,
+    provider_object  TEXT NOT NULL,
+    customer_id      TEXT,
+    user_id          TEXT REFERENCES users (id) ON DELETE SET NULL,
+    amount           INTEGER,
+    currency         TEXT,
+    created_at       TEXT NOT NULL,
+    resolved_at      TEXT
+  );
+  `,
 ];
 
 export const migrate = async () => {

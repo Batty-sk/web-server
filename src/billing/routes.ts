@@ -1,5 +1,4 @@
 import express, { Router, type Response } from 'express';
-import type Stripe from 'stripe';
 
 import { getUser } from '../auth/accounts.js';
 import { requireUser } from '../auth/sessions.js';
@@ -9,7 +8,6 @@ import { requireSiteOrigin } from '../http/cors.js';
 import { HttpError } from '../http/errors.js';
 import { devBillingRouter } from './dev.js';
 import { billing, stripeBilling } from './index.js';
-import { fromStripe, SUBSCRIPTION_EVENTS } from './stripe.js';
 import {
   acceptInvitation,
   applyProviderSubscription,
@@ -85,11 +83,11 @@ billingRouter.post('/webhook', express.raw({ type: 'application/json', limit: '1
   if (!stripeBilling) throw new HttpError(404, 'Not found.');
   const event = stripeBilling.parseWebhook(req.body as Buffer, req.headers['stripe-signature'] as string | undefined);
 
-  const seen = await one('SELECT 1 FROM billing_events WHERE id = ?', [event.id]);
-  if (!seen && SUBSCRIPTION_EVENTS.has(event.type)) {
-    await applyProviderSubscription(fromStripe(event.data.object as Stripe.Subscription, event.created));
+  // Recorded only after it's handled: if handling fails, Stripe retries and we try again.
+  if (!(await one('SELECT 1 FROM billing_events WHERE id = ?', [event.id]))) {
+    await stripeBilling.handleEvent(event);
+    await recordBillingEvent(event.id, event.type);
   }
-  if (!seen) await recordBillingEvent(event.id, event.type);
   res.json({ received: true });
 });
 

@@ -76,14 +76,16 @@ export const applyProviderSubscription = async (snapshot: ProviderSubscription) 
     return existing.id;
   }
 
-  // First sight of this subscription. Find its owner by metadata, or by billing customer.
-  let ownerId = snapshot.userId;
-  if (!ownerId && snapshot.providerCustomerId) {
+  // First sight of this subscription. Its owner is whoever we created the billing customer for;
+  // the user id in the provider's metadata is only a fallback.
+  let ownerId: string | null = null;
+  if (snapshot.providerCustomerId) {
     ownerId = (await one<{ user_id: string }>('SELECT user_id FROM billing_customers WHERE provider = ? AND customer_id = ?', [
       snapshot.provider,
       snapshot.providerCustomerId,
     ]))?.user_id ?? null;
   }
+  ownerId ??= snapshot.userId;
   const owner = ownerId ? await one<{ id: string; email: string | null }>('SELECT id, email FROM users WHERE id = ?', [ownerId]) : undefined;
 
   const id = randomUUID();
@@ -337,3 +339,25 @@ export const recordBillingEvent = async (id: string, type: string): Promise<bool
 };
 
 export { isEntitledStatus };
+
+/** Disputes, refunds and fraud warnings, kept for the team to review. */
+export const recordBillingAlert = async (alert: {
+  eventId: string;
+  type: string;
+  providerObject: string;
+  provider: string;
+  customerId: string | null;
+  amount: number | null;
+  currency: string | null;
+}) => {
+  const userId = alert.customerId
+    ? (await one<{ user_id: string }>('SELECT user_id FROM billing_customers WHERE provider = ? AND customer_id = ?', [alert.provider, alert.customerId]))
+        ?.user_id ?? null
+    : null;
+  await run(
+    `INSERT INTO billing_alerts (event_id, type, provider_object, customer_id, user_id, amount, currency, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (event_id) DO NOTHING`,
+    [alert.eventId, alert.type, alert.providerObject, alert.customerId, userId, alert.amount, alert.currency, now()],
+  );
+  console.warn(`billing: ${alert.type} on ${alert.providerObject} (customer ${alert.customerId ?? 'unknown'}, user ${userId ?? 'unknown'}).`);
+};
