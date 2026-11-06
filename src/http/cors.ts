@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 
-import { ALLOWED_ORIGINS } from '../config.js';
+import { ALLOWED_ORIGINS, API_URL } from '../config.js';
 import { HttpError } from './errors.js';
 
 /**
@@ -25,7 +25,8 @@ export const cors: RequestHandler = (req, res, next) => {
     return void res.status(204).end();
   }
 
-  if (!['GET', 'HEAD'].includes(req.method) && origin !== undefined && !allowed) {
+  // The API's own pages (developer checkout) post to it same-origin.
+  if (!['GET', 'HEAD'].includes(req.method) && origin !== undefined && !allowed && origin !== API_URL) {
     return next(new HttpError(403, 'Cross-origin requests aren’t allowed.'));
   }
 

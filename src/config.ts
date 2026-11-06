@@ -73,3 +73,31 @@ export const SESSION_TTL = {
   user: 30 * 24 * 60 * 60 * 1000,
   admin: 12 * 60 * 60 * 1000,
 } as const;
+
+/* Manuscript subscription ------------------------------------------------ */
+
+/**
+ * One product, one price, per person. Students, freelancers and companies all
+ * pay the same; organisations simply buy more seats. Stripe's price must match.
+ */
+export const PLAN = {
+  product: 'Manuscript',
+  amount: 999,
+  currency: 'usd',
+  interval: 'month',
+  maxSeats: 500,
+} as const;
+
+export const BILLING =
+  (env('BILLING_PROVIDER') ?? (IS_PRODUCTION ? 'stripe' : 'dev')) === 'stripe'
+    ? {
+        provider: 'stripe' as const,
+        secretKey: required('STRIPE_SECRET_KEY'),
+        webhookSecret: required('STRIPE_WEBHOOK_SECRET'),
+        priceId: required('STRIPE_PRICE_ID'),
+        automaticTax: env('STRIPE_AUTOMATIC_TAX') === 'true',
+      }
+    : (() => {
+        if (IS_PRODUCTION) throw new Error('BILLING_PROVIDER=dev is for local development only.');
+        return { provider: 'dev' as const };
+      })();

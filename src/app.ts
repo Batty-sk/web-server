@@ -6,6 +6,7 @@ import { cors } from './http/cors.js';
 import { errorHandler, HttpError } from './http/errors.js';
 import { getMedia } from './newsroom/media.js';
 import { newsroomAdmin } from './newsroom/routes.js';
+import { billingRouter, invitationsRouter, subscriptionRouter } from './billing/routes.js';
 import { meRouter } from './users/routes.js';
 
 export const app = express();
@@ -30,7 +31,13 @@ app.get('/health', (_req, res) => {
 /* Accounts — the website's Sign In ------------------------------------- */
 
 app.use('/auth', authRouter('user'));
+app.use('/me/subscription', subscriptionRouter);
+app.use('/me/invitations', invitationsRouter);
 app.use('/me', express.json({ limit: '10kb' }), meRouter);
+
+/* Manuscript subscriptions ------------------------------------------------ */
+
+app.use('/billing', billingRouter);
 
 /* Admin — a separate door, by invitation ------------------------------- */
 

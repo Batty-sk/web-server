@@ -92,6 +92,10 @@ export const updateUserName = (id: string, name: string) =>
 export const deleteUser = async (id: string) => {
   await run('DELETE FROM sessions WHERE audience = ? AND principal_id = ?', ['user', id]);
   await run('DELETE FROM user_identities WHERE user_id = ?', [id]);
+  // Seats they held go back to their subscriptions; a subscription they bought keeps its record.
+  await run('DELETE FROM subscription_seats WHERE user_id = ?', [id]);
+  await run('UPDATE subscriptions SET owner_user_id = NULL WHERE owner_user_id = ?', [id]);
+  await run('DELETE FROM billing_customers WHERE user_id = ?', [id]);
   await run('DELETE FROM users WHERE id = ?', [id]);
 };
 

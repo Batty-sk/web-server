@@ -95,6 +95,61 @@ const MIGRATIONS: string[] = [
     created_at  TEXT NOT NULL
   );
   `,
+  // 2 — Manuscript subscriptions, seats and entitlements
+  `
+  CREATE TABLE billing_customers (
+    user_id      TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    provider     TEXT NOT NULL,
+    customer_id  TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    UNIQUE (provider, customer_id)
+  );
+
+  -- One row per subscription, wherever it was bought. "web" is billed by
+  -- Squircle (Stripe); "app_store" will be billed by Apple.
+  CREATE TABLE subscriptions (
+    id                        TEXT PRIMARY KEY,
+    owner_user_id             TEXT REFERENCES users (id) ON DELETE SET NULL,
+    channel                   TEXT NOT NULL CHECK (channel IN ('web', 'app_store')),
+    provider                  TEXT NOT NULL,
+    provider_subscription_id  TEXT NOT NULL,
+    provider_customer_id      TEXT,
+    name                      TEXT NOT NULL DEFAULT '',
+    status                    TEXT NOT NULL,
+    seats                     INTEGER NOT NULL CHECK (seats >= 1),
+    current_period_end        TEXT,
+    cancel_at_period_end      INTEGER NOT NULL DEFAULT 0,
+    ended_at                  TEXT,
+    provider_event_at         TEXT,
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL,
+    UNIQUE (provider, provider_subscription_id)
+  );
+  CREATE INDEX subscriptions_owner ON subscriptions (owner_user_id);
+
+  -- A seat is a person's place on a subscription: the buyer's own, or one
+  -- they've given to someone by email.
+  CREATE TABLE subscription_seats (
+    id               TEXT PRIMARY KEY,
+    subscription_id  TEXT NOT NULL REFERENCES subscriptions (id) ON DELETE CASCADE,
+    user_id          TEXT REFERENCES users (id) ON DELETE CASCADE,
+    email            TEXT NOT NULL,
+    role             TEXT NOT NULL CHECK (role IN ('owner', 'member')),
+    state            TEXT NOT NULL CHECK (state IN ('invited', 'active')),
+    invited_at       TEXT NOT NULL,
+    accepted_at      TEXT,
+    UNIQUE (subscription_id, email)
+  );
+  CREATE INDEX seats_user ON subscription_seats (user_id);
+  CREATE INDEX seats_email ON subscription_seats (email, state);
+
+  -- Webhook deliveries already handled, so a retried event is applied once.
+  CREATE TABLE billing_events (
+    id           TEXT PRIMARY KEY,
+    type         TEXT NOT NULL,
+    received_at  TEXT NOT NULL
+  );
+  `,
 ];
 
 export const migrate = async () => {

@@ -14,12 +14,14 @@
     "typecheck": "tsc --noEmit",
     "admin:add": "node --env-file-if-exists=.env --import tsx src/scripts/add-admin.ts",
     "newsroom:import": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx src/scripts/import-newsroom.ts",
-    "newsroom:rebuild": "node --env-file-if-exists=.env --import tsx src/scripts/rebuild.ts"
+    "newsroom:rebuild": "node --env-file-if-exists=.env --import tsx src/scripts/rebuild.ts",
+    "test": "rm -f data/test.db* && PORT=4599 API_URL=http://localhost:4599 SITE_URL=http://localhost:8080 DATABASE_URL=file:data/test.db DEV_SIGN_IN=true BILLING_PROVIDER=dev PUBLISH_TARGET=filesystem node --disable-warning=ExperimentalWarning --import tsx --test --test-concurrency=1 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
     "express": "^5.3.0",
-    "jose": "^6.2.15"
+    "jose": "^6.2.15",
+    "stripe": "^23.1.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

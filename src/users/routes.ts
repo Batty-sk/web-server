@@ -2,12 +2,14 @@ import { Router } from 'express';
 
 import { deleteUser, getUser, updateUserName } from '../auth/accounts.js';
 import { endSession, requireUser } from '../auth/sessions.js';
+import { hasLiveSubscription } from '../billing/subscriptions.js';
+import { requireSiteOrigin } from '../http/cors.js';
 import { HttpError } from '../http/errors.js';
 
 /** The signed-in person's own account. Subscriptions and templates will hang off this. */
 export const meRouter = Router();
 
-meRouter.use(requireUser);
+meRouter.use(requireSiteOrigin, requireUser);
 
 meRouter.get('/', async (_req, res) => {
   const user = await getUser(res.locals.userId as string);
@@ -23,6 +25,10 @@ meRouter.patch('/', async (req, res) => {
 });
 
 meRouter.delete('/', async (req, res) => {
+  // Deleting an account must never leave someone paying for a subscription they can't reach.
+  if (await hasLiveSubscription(res.locals.userId as string)) {
+    throw new HttpError(409, 'Cancel your Manuscript subscription before deleting your account.');
+  }
   await deleteUser(res.locals.userId as string);
   await endSession(req, res, 'user');
   res.status(204).end();
