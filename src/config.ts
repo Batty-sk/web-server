@@ -14,14 +14,8 @@ const origin = (value: string) => new URL(value).origin;
 
 export const PORT = Number(env('PORT') ?? 4000);
 
-/** The static website on GitHub Pages. Readers never call this server. */
+/** The static website on GitHub Pages. Its Newsroom pages read stories from this server. */
 export const SITE_URL = origin(required('SITE_URL', 'http://localhost:8080'));
-
-/**
- * The public address written into generated pages (canonical URLs, social cards, RSS).
- * Separate from SITE_URL so pages built during local development still point at the real site.
- */
-export const CANONICAL_URL = origin(env('CANONICAL_URL') ?? 'https://squircle.london');
 
 /** This server's public origin, used to build OAuth redirect URIs. */
 export const API_URL = origin(required('API_URL', `http://localhost:${PORT}`));
@@ -58,16 +52,6 @@ export const APPLE = env('APPLE_SERVICES_ID')
 
 /** Signs in without a provider, for local development only. */
 export const DEV_SIGN_IN = !IS_PRODUCTION && env('DEV_SIGN_IN') === 'true';
-
-export const PUBLISH =
-  (env('PUBLISH_TARGET') ?? (IS_PRODUCTION ? 'github' : 'filesystem')) === 'github'
-    ? {
-        target: 'github' as const,
-        token: required('GITHUB_TOKEN'),
-        repo: required('GITHUB_REPO'),
-        branch: env('GITHUB_BRANCH') ?? 'main',
-      }
-    : { target: 'filesystem' as const, siteDir: required('SITE_DIR', '../manuscript') };
 
 export const SESSION_TTL = {
   user: 30 * 24 * 60 * 60 * 1000,

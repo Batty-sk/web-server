@@ -1,9 +1,8 @@
 import express, { Router, type Request, type Response } from 'express';
 
-import { API_URL, SITE_URL } from '../config.js';
+import { API_URL } from '../config.js';
 import { requireAdmin } from '../auth/sessions.js';
 import { requireSiteOrigin } from '../http/cors.js';
-import { updateSite, type SiteUpdate } from '../publish/index.js';
 import {
   createArticle,
   deleteArticle,
@@ -16,12 +15,9 @@ import {
 } from './articles.js';
 import { renderMarkdown } from './markdown.js';
 import { MAX_UPLOAD_BYTES, saveMedia } from './media.js';
-import { renderArticle, storyPath } from './templates.js';
+import { MEDIA, storyPage, storyUrl } from './public.js';
 import { HttpError, type Article } from './types.js';
 import { parseArticleInput } from './validate.js';
-
-/** Draft images aren't on the website yet, so previews read them from the API. */
-const PREVIEW = { base: `${SITE_URL}/`, mediaBase: `${API_URL}/media/` };
 
 const idParam = (req: Request) => {
   const id = Number(req.params.id);
@@ -34,10 +30,8 @@ const editor = (res: Response) => res.locals.adminId as string;
 /** Adds the live URL, so the editor can link straight to the published page. */
 const present = (article: Article) => ({
   ...article,
-  url: article.status === 'published' ? `${SITE_URL}/${storyPath(article)}` : null,
+  url: article.status === 'published' ? storyUrl(article.slug) : null,
 });
-
-const site = (update: SiteUpdate) => ({ changed: update.changed, target: update.target, commitUrl: update.url ?? null });
 
 export const newsroomAdmin = Router();
 
@@ -56,39 +50,36 @@ newsroomAdmin.get('/articles/:id', async (req, res) => {
   res.json({ article: present(await getArticle(idParam(req))) });
 });
 
+// Readers get stories straight from the database, so saving a published story
+// is publishing it, and publishing is instant.
 newsroomAdmin.patch('/articles/:id', async (req, res) => {
   const article = await updateArticle(idParam(req), parseArticleInput(req.body), editor(res));
-  // Saving a published story is publishing it.
-  const update = article.status === 'published' ? await updateSite(`update “${article.title}”`) : null;
-  res.json({ article: present(article), site: update && site(update) });
+  res.json({ article: present(article) });
 });
 
 newsroomAdmin.post('/articles/:id/publish', async (req, res) => {
-  const article = await publishArticle(idParam(req), editor(res));
-  res.json({ article: present(article), site: site(await updateSite(`publish “${article.title}”`)) });
+  res.json({ article: present(await publishArticle(idParam(req), editor(res))) });
 });
 
 newsroomAdmin.post('/articles/:id/unpublish', async (req, res) => {
-  const article = await unpublishArticle(idParam(req), editor(res));
-  res.json({ article: present(article), site: site(await updateSite(`unpublish “${article.title}”`)) });
+  res.json({ article: present(await unpublishArticle(idParam(req), editor(res))) });
 });
 
 newsroomAdmin.delete('/articles/:id', async (req, res) => {
-  const removed = await deleteArticle(idParam(req));
-  if (removed.status === 'published') await updateSite(`remove “${removed.title}”`);
+  await deleteArticle(idParam(req));
   res.status(204).end();
 });
 
-newsroomAdmin.get('/articles/:id/preview', async (req, res) => {
+/** The website's story page reads this for a preview, so drafts look exactly as they will live. */
+newsroomAdmin.get('/articles/:id/story', async (req, res) => {
   const article = await getArticle(idParam(req));
   res.setHeader('Cache-Control', 'no-store');
-  res.setHeader('X-Robots-Tag', 'noindex');
-  res.type('html').send(renderArticle(article, await listPublished(), { ...PREVIEW, preview: true }));
+  res.json({ ...storyPage(article, await listPublished()), preview: true });
 });
 
 newsroomAdmin.post('/render', (req, res) => {
   const body = typeof req.body?.body === 'string' ? req.body.body : '';
-  res.json({ html: renderMarkdown(body, PREVIEW) });
+  res.json({ html: renderMarkdown(body, MEDIA) });
 });
 
 newsroomAdmin.post(
@@ -100,9 +91,3 @@ newsroomAdmin.post(
     res.status(201).json({ ...saved, url: `${API_URL}/media/${saved.path.split('/').pop()}` });
   },
 );
-
-/** Regenerates every page, after a template change for example. Owners only. */
-newsroomAdmin.post('/rebuild', async (_req, res) => {
-  if (res.locals.adminRole !== 'owner') throw new HttpError(403, 'Only the owner can rebuild the Newsroom.');
-  res.json({ site: site(await updateSite('rebuild')) });
-});

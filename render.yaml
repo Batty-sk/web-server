@@ -38,11 +38,3 @@ services:
         sync: false
       - key: APPLE_PRIVATE_KEY
         sync: false
-      - key: PUBLISH_TARGET
-        value: github
-      - key: GITHUB_REPO
-        value: Batty-sk/manuscript
-      - key: GITHUB_BRANCH
-        value: main
-      - key: GITHUB_TOKEN
-        sync: false

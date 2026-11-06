@@ -5,6 +5,7 @@ import { IS_PRODUCTION } from './config.js';
 import { cors } from './http/cors.js';
 import { errorHandler, HttpError } from './http/errors.js';
 import { getMedia } from './newsroom/media.js';
+import { newsroomPublic } from './newsroom/public.js';
 import { newsroomAdmin } from './newsroom/routes.js';
 import { meRouter } from './users/routes.js';
 
@@ -37,15 +38,18 @@ app.use('/me', express.json({ limit: '10kb' }), meRouter);
 app.use('/admin/auth', authRouter('admin'));
 app.use('/admin/newsroom', express.json({ limit: '1mb' }), newsroomAdmin);
 
-/* Images for drafts, before they're published to the site ------------- */
+/* The Newsroom — public, read by the website's Newsroom pages ---------- */
+
+app.use('/newsroom', newsroomPublic);
 
 app.get('/media/:name', async (req, res) => {
   if (!/^[a-f0-9]{16}\.(?:jpg|png|webp|gif)$/.test(req.params.name)) throw new HttpError(404, 'Not found.');
   const file = await getMedia(req.params.name);
   if (!file) throw new HttpError(404, 'Not found.');
-  // Names are content hashes, so the bytes behind a name never change.
+  // Names are content hashes, so the bytes behind a name never change. Newsroom
+  // images are public, so feed readers on other sites may show them too.
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.type(file.mime).send(file.bytes);
 });
 
