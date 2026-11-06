@@ -1,0 +1,48 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this repository.
+# Values marked sync: false are entered in the dashboard; never commit them.
+services:
+  - type: web
+    name: squircle-server
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: SITE_URL
+        value: https://squircle.london
+      - key: API_URL
+        value: https://api.squircle.london
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: OWNER_EMAIL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_AUTH_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: APPLE_SERVICES_ID
+        sync: false
+      - key: APPLE_KEY_ID
+        sync: false
+      - key: APPLE_PRIVATE_KEY
+        sync: false
+      - key: PUBLISH_TARGET
+        value: github
+      - key: GITHUB_REPO
+        value: Batty-sk/manuscript
+      - key: GITHUB_BRANCH
+        value: main
+      - key: GITHUB_TOKEN
+        sync: false
