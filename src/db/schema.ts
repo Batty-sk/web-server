@@ -1,12 +1,14 @@
 import { db } from './client.js';
 
 /**
- * Migrations run in order, once each. Never edit one that has shipped;
- * add a new one instead.
+ * Migrations run in order, once each, and are remembered by name. Names (not
+ * numbers) let features built on separate branches add their own without
+ * colliding. Never edit one that has shipped; add a new one instead.
  */
-const MIGRATIONS: string[] = [
-  // 1 — accounts, admin and the newsroom
-  `
+const MIGRATIONS: { name: string; sql: string }[] = [
+  {
+    name: 'accounts-and-newsroom',
+    sql: `
   CREATE TABLE users (
     id              TEXT PRIMARY KEY,
     email           TEXT,
@@ -95,15 +97,86 @@ const MIGRATIONS: string[] = [
     created_at  TEXT NOT NULL
   );
   `,
+  },
+  {
+    name: 'community-templates',
+    sql: `
+  -- Templates people share with the Manuscript community. Squircle's own
+  -- templates live in the website's catalogue, not here.
+  CREATE TABLE templates (
+    id             TEXT PRIMARY KEY,
+    owner_id       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    title          TEXT NOT NULL DEFAULT '',
+    description    TEXT NOT NULL DEFAULT '',
+    category       TEXT NOT NULL DEFAULT 'Work' CHECK (category IN ('Work', 'School', 'Writing', 'Personal')),
+    tags           TEXT NOT NULL DEFAULT '[]',
+    format         TEXT NOT NULL CHECK (format IN ('docx', 'xlsx', 'pptx')),
+    -- Pages, sheets or slides, when the file says. (Not "length": libSQL rows already have one.)
+    item_count     INTEGER,
+    use_placeholder INTEGER NOT NULL DEFAULT 0,
+    status         TEXT NOT NULL DEFAULT 'draft'
+                   CHECK (status IN ('draft', 'in_review', 'published', 'declined')),
+    review_note    TEXT NOT NULL DEFAULT '',
+    reviewed_by    TEXT,
+    reviewed_at    TEXT,
+    submitted_at   TEXT,
+    published_at   TEXT,
+    downloads      INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+  );
+  CREATE INDEX templates_owner ON templates (owner_id, updated_at DESC);
+  CREATE INDEX templates_status ON templates (status, published_at DESC);
+
+  -- original: as uploaded, only ever seen by its creator.
+  -- placeholder: the original with its words replaced by Lorem Ipsum.
+  -- published: what reviewers check and everyone downloads, personal details removed.
+  CREATE TABLE template_files (
+    template_id  TEXT NOT NULL REFERENCES templates (id) ON DELETE CASCADE,
+    kind         TEXT NOT NULL CHECK (kind IN ('original', 'placeholder', 'published')),
+    name         TEXT NOT NULL,
+    size         INTEGER NOT NULL,
+    sha256       TEXT NOT NULL,
+    bytes        BLOB NOT NULL,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (template_id, kind)
+  );
+
+  -- Images the creator adds; the first is the cover. The bytes live in media.
+  CREATE TABLE template_previews (
+    template_id  TEXT NOT NULL REFERENCES templates (id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL,
+    media        TEXT NOT NULL,
+    width        INTEGER NOT NULL,
+    height       INTEGER NOT NULL,
+    PRIMARY KEY (template_id, position)
+  );
+  `,
+  },
 ];
 
 export const migrate = async () => {
-  await db.execute('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
-  const row = (await db.execute('SELECT MAX(version) AS v FROM schema_version')).rows[0];
-  const current = Number(row?.v ?? 0);
+  await db.execute('CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
 
-  for (let i = current; i < MIGRATIONS.length; i += 1) {
-    await db.executeMultiple(`BEGIN; ${MIGRATIONS[i]} INSERT INTO schema_version (version) VALUES (${i + 1}); COMMIT;`);
+  // Databases from before named migrations counted them instead. Version 1 was
+  // the same everywhere, so carry it over; later numbers belong to other branches.
+  const legacy = await db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'");
+  if (legacy.rows.length) {
+    const version = Number((await db.execute('SELECT MAX(version) AS v FROM schema_version')).rows[0]?.v ?? 0);
+    if (version >= 1) {
+      await db.execute({
+        sql: 'INSERT OR IGNORE INTO migrations (name, applied_at) VALUES (?, ?)',
+        args: [MIGRATIONS[0]!.name, new Date().toISOString()],
+      });
+    }
+  }
+
+  const applied = new Set((await db.execute('SELECT name FROM migrations')).rows.map((r) => String(r.name)));
+  for (const { name, sql } of MIGRATIONS) {
+    if (applied.has(name)) continue;
+    await db.executeMultiple(
+      `BEGIN; ${sql} INSERT INTO migrations (name, applied_at) VALUES ('${name}', '${new Date().toISOString()}'); COMMIT;`,
+    );
   }
   await db.execute('PRAGMA foreign_keys = ON');
 };

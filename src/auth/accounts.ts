@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { OWNER_EMAIL } from '../config.js';
 import { db, one, run } from '../db/client.js';
+import { deleteTemplatesOf } from '../templates/store.js';
 import type { Profile } from './types.js';
 
 const now = () => new Date().toISOString();
@@ -90,6 +91,8 @@ export const updateUserName = (id: string, name: string) =>
   run('UPDATE users SET name = ?, updated_at = ? WHERE id = ?', [name, now(), id]);
 
 export const deleteUser = async (id: string) => {
+  // Their templates go with them, published or not.
+  await deleteTemplatesOf(id);
   await run('DELETE FROM sessions WHERE audience = ? AND principal_id = ?', ['user', id]);
   await run('DELETE FROM user_identities WHERE user_id = ?', [id]);
   await run('DELETE FROM users WHERE id = ?', [id]);

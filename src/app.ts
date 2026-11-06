@@ -6,6 +6,7 @@ import { cors } from './http/cors.js';
 import { errorHandler, HttpError } from './http/errors.js';
 import { getMedia } from './newsroom/media.js';
 import { newsroomAdmin } from './newsroom/routes.js';
+import { myTemplates, publicTemplates, templateReview } from './templates/routes.js';
 import { meRouter } from './users/routes.js';
 
 export const app = express();
@@ -30,12 +31,19 @@ app.get('/health', (_req, res) => {
 /* Accounts — the website's Sign In ------------------------------------- */
 
 app.use('/auth', authRouter('user'));
+// Before /me, which parses JSON for everything under it; uploads arrive as raw bytes.
+app.use('/me/templates', myTemplates);
 app.use('/me', express.json({ limit: '10kb' }), meRouter);
 
 /* Admin — a separate door, by invitation ------------------------------- */
 
 app.use('/admin/auth', authRouter('admin'));
 app.use('/admin/newsroom', express.json({ limit: '1mb' }), newsroomAdmin);
+app.use('/admin/templates', express.json({ limit: '10kb' }), templateReview);
+
+/* Community templates — public ------------------------------------------ */
+
+app.use('/templates', publicTemplates);
 
 /* Images for drafts, before they're published to the site ------------- */
 
