@@ -5,19 +5,23 @@ The Squircle Labs API. It handles everything on [squircle.london](https://squirc
 - **Accounts.** People sign up and sign in with Apple or Google. This will later cover Manuscript subscriptions.
 - **Community templates.** People share their own templates. Squircle Labs reviews each one before it appears in the gallery.
 - **Admin.** A separate sign-in, by invitation only. It holds the Newsroom editor for now.
-- **The Newsroom.** It renders static pages and publishes them to the website's repository.
+- **The Newsroom.** Stories live in the database. The website's Newsroom pages read them from a public JSON API.
 
-The website stays fully static on GitHub Pages. Its public pages never call this server. Only
-`/account/` and `/admin/` do, and only when someone opens them.
+The website stays static on GitHub Pages. The Newsroom pages, and the Newsroom tile on the home page,
+fetch published stories from this server. `/account/` and `/admin/` call it with credentials. Every other
+page works without it.
+
+This server never writes to the website's repository. A story is live the moment it's published, and
+nothing here holds a GitHub token.
 
 ```text
  squircle.london (GitHub Pages)                api.squircle.london (Render)        Turso
  ─────────────────────────────                  ──────────────────────────          ─────
- public pages ── never call the API
+ /newsroom/, home tile ── fetch, public ──────▶  /newsroom/*, /media/* ──────────▶  articles, media
  /account/  ── fetch, credentials ────────────▶  /auth/*, /me           ──────────▶  users, sessions
  /admin/    ── fetch, credentials ────────────▶  /admin/auth/*,         ──────────▶  admins, articles, media
                                                   /admin/newsroom/*
-            ◀── GitHub Pages deploys ◀── one commit to main (newsroom/, assets/newsroom/, index.html)
+ other pages ── never call the API
 ```
 
 **Stack:** Express 5 and TypeScript; [libSQL](https://github.com/tursodatabase/libsql-client-ts), which uses a local SQLite file in
@@ -33,9 +37,12 @@ all the runtime dependencies.
 | `GET · PATCH · DELETE /me` | user | Your account: read, rename, delete. |
 | `GET /admin/auth/{apple,google}` → `/admin/auth/{provider}/callback` | team | Admin sign-in. Refused unless the email is on the team. |
 | `GET /admin/auth/session`, `POST /admin/auth/sign-out` | admin | |
-| `/admin/newsroom/articles[/:id][/publish\|/unpublish\|/preview]` | admin | Stories. |
+| `/admin/newsroom/articles[/:id][/publish\|/unpublish\|/story]` | admin | Stories. `/story` is a draft in the same shape as the public one, for previews. |
 | `POST /admin/newsroom/uploads`, `POST /admin/newsroom/render` | admin | Images and Markdown preview. |
-| `GET /media/:name` | anyone | Images for drafts, before they're published to the site. |
+| `GET /newsroom/stories[?limit=n]` | anyone | Published stories, newest first, as cards. |
+| `GET /newsroom/stories/:slug` | anyone | One story with its body as HTML, plus three more to read. |
+| `GET /newsroom/rss.xml` | anyone | The RSS feed. |
+| `GET /media/:name` | anyone | Newsroom images. Names are content hashes, cached for a year. |
 | `GET · POST /me/templates` | user | Your templates; upload one (the file is the body, `?name=` its file name). |
 | `GET · PATCH · DELETE /me/templates/:id` | user | One template: title, description, category, tags, `usePlaceholder`. |
 | `GET /me/templates/:id/placeholder-sample` | user | The first paragraphs, before and after placeholder text. |
@@ -53,6 +60,7 @@ all the runtime dependencies.
 - **Separate sessions:** users and admins have separate sessions with separate cookies (`sl_session` on `/` for 30 days, renewed while used; `sl_admin` on `/admin` for 12 hours). The session table stores only a hash of each random token, so sessions can be revoked.
 - **Cookies:** `HttpOnly`, `Secure`, `SameSite=Lax`. They work because `api.squircle.london` is on the same site as `squircle.london`. That's why the API must live on a subdomain: Safari blocks cookies from other domains.
 - **Writes:** CORS allows only `SITE_URL` (plus `EXTRA_ORIGINS`). Every write must carry an allowed `Origin`.
+- **Story HTML:** a story's body is Markdown. The server escapes it before formatting it, and allows only `http(s)` and `mailto` links, so the HTML the website inserts can't carry script.
 - **Admin access:** only for emails on the team. `OWNER_EMAIL` is always an owner, so the team can't lock itself out. Add people with `npm run admin:add -- person@example.com editor`.
 - **Linked accounts:** a new Apple or Google login joins an existing account only when the provider has verified the email.
 
@@ -99,7 +107,7 @@ python3 -m http.server 8080 # http://localhost:8080
 
 When the site runs on localhost, it calls `http://localhost:4000` automatically. With `DEV_SIGN_IN=true`,
 the sign-in pages show a **Developer sign-in** box that skips Apple and Google. It never exists in
-production. In development, publishing writes into `SITE_DIR` (`../manuscript`) instead of committing to GitHub.
+production.
 
 Google sign-in also works on localhost if you add the localhost redirect URIs (below). Apple doesn't allow
 localhost, so test it on the deployed server.
@@ -124,17 +132,7 @@ Copy the existing Newsroom stories and images into it from your development data
 DATABASE_URL=libsql://… DATABASE_AUTH_TOKEN=… npm run newsroom:import -- data/dev.db
 ```
 
-### 2. GitHub token (publishing)
-
-GitHub → Settings → Developer settings → **Fine-grained personal access tokens** → Generate new token.
-
-- **Repository access:** Only select repositories → `Batty-sk/manuscript`
-- **Permissions:** Repository → **Contents: Read and write**. Nothing else.
-- **Expiration:** a year. Note the date; publishing stops when the token expires.
-
-This is `GITHUB_TOKEN`.
-
-### 3. Sign in with Apple
+### 2. Sign in with Apple
 
 You need the paid Apple Developer Program membership. Everything is at
 [developer.apple.com/account](https://developer.apple.com/account) → **Certificates, Identifiers & Profiles**.
@@ -170,7 +168,7 @@ Things to know about Sign in with Apple:
 - People can choose **Hide My Email**. They're then known by an `…@privaterelay.appleid.com` address. To email them later, register your sending domain under Services → **Sign in with Apple for Email Communication**.
 - For **Admin**, the Apple ID's email must match the invited email. Admins should choose **Share My Email**, or use Google.
 
-### 4. Sign in with Google
+### 3. Sign in with Google
 
 At [console.cloud.google.com](https://console.cloud.google.com):
 
@@ -187,23 +185,24 @@ At [console.cloud.google.com](https://console.cloud.google.com):
    - `http://localhost:4000/admin/auth/google/callback` (development)
 5. Copy the **Client ID** → `GOOGLE_CLIENT_ID` and the **Client secret** → `GOOGLE_CLIENT_SECRET`.
 
-### 5. Render (hosting)
+### 4. Render (hosting)
 
 1. Push this repository to GitHub, for example `Batty-sk/squircle-server`.
 2. On Render: **New → Blueprint**, pick the repository. Render reads `render.yaml`.
-3. Fill in the values marked `sync: false`: `OWNER_EMAIL`, the Turso, Google, Apple and GitHub values. Render generates `SESSION_SECRET`.
+3. Fill in the values marked `sync: false`: `OWNER_EMAIL`, the Turso, Google and Apple values. Render generates `SESSION_SECRET`.
 4. **Settings → Custom Domains → Add** `api.squircle.london`. Render shows a CNAME target (`squircle-server.onrender.com`).
    Add that CNAME record at your DNS provider. Render then issues the HTTPS certificate.
 5. Open `https://api.squircle.london/health`. It should say `{"ok":true}`.
 
 **About the free plan:** the server sleeps after 15 minutes without requests and takes about a minute to
-wake. The Account and Admin pages say "Waking up…" while that happens. Public pages are unaffected
-because they never call the server. Render's Starter plan keeps the server awake.
+wake. The Account and Admin pages say "Waking up…" while that happens, and the Newsroom shows its
+loading state. Other pages are unaffected. Render's Starter plan keeps the server awake, which matters
+once the Newsroom has readers.
 
-### 6. Check it
+### 5. Check it
 
 - `https://squircle.london/account/`: sign up with Apple, then sign out and in with Google using the same email. Both appear under **Signs in with**.
-- `https://squircle.london/admin/`: sign in as `OWNER_EMAIL`, edit a story and press **Update**. A commit `newsroom: update “…”` appears on `main`, and the page updates about a minute later.
+- `https://squircle.london/admin/`: sign in as `OWNER_EMAIL`, edit a story and press **Update**. Reload the story on the Newsroom: the change is already there.
 
 ## Database migrations
 
@@ -220,5 +219,4 @@ first migration is carried over automatically.
 | `npm test` | Unit tests |
 | `npm run build` · `npm start` | Compile, then run (what Render does) |
 | `npm run admin:add -- email [editor\|owner]` | Invite someone to Admin |
-| `npm run newsroom:rebuild` | Republish every Newsroom page (after a template change) |
 | `npm run newsroom:import -- source.db` | Copy stories and images into `DATABASE_URL` |

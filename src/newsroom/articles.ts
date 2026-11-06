@@ -62,6 +62,15 @@ export const listPublished = async () =>
     )
   ).map(toArticle) as PublishedArticle[];
 
+/** A story readers can see, or null; drafts never leave the editor. */
+export const getPublishedBySlug = async (slug: string): Promise<PublishedArticle | null> => {
+  const row = await one<Row>(
+    `SELECT * FROM articles WHERE slug = ? AND status = 'published' AND published_at IS NOT NULL`,
+    [slug],
+  );
+  return row ? (toArticle(row) as PublishedArticle) : null;
+};
+
 export const getArticle = async (id: number): Promise<Article> => {
   const row = await one<Row>('SELECT * FROM articles WHERE id = ?', [id]);
   if (!row) throw new HttpError(404, 'That story no longer exists.');

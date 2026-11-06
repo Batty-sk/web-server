@@ -14,8 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --import tsx --test 'src/**/*.test.ts'",
     "admin:add": "node --env-file-if-exists=.env --import tsx src/scripts/add-admin.ts",
-    "newsroom:import": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx src/scripts/import-newsroom.ts",
-    "newsroom:rebuild": "node --env-file-if-exists=.env --import tsx src/scripts/rebuild.ts"
+    "newsroom:import": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --import tsx src/scripts/import-newsroom.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
