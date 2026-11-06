@@ -38,6 +38,18 @@ services:
         sync: false
       - key: APPLE_PRIVATE_KEY
         sync: false
+      - key: BILLING_PROVIDER
+        value: stripe
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_AUTOMATIC_TAX
+        value: "false"
+      - key: ENTITLEMENT_PRIVATE_KEY
+        sync: false
       - key: PUBLISH_TARGET
         value: github
       - key: GITHUB_REPO

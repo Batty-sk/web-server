@@ -150,6 +150,34 @@ const MIGRATIONS: string[] = [
     received_at  TEXT NOT NULL
   );
   `,
+  // 3 — Signing in to the Manuscript apps
+  `
+  -- One-time codes handed to an app after the person approves it (OAuth + PKCE).
+  CREATE TABLE app_auth_codes (
+    code_hash       TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    client_id       TEXT NOT NULL,
+    redirect_uri    TEXT NOT NULL,
+    code_challenge  TEXT NOT NULL,
+    device_name     TEXT NOT NULL DEFAULT '',
+    expires_at      TEXT NOT NULL
+  );
+
+  -- A signed-in Mac. The refresh token rotates on every use; presenting the
+  -- previous one means it was copied, and the whole session is revoked.
+  CREATE TABLE app_sessions (
+    id                     TEXT PRIMARY KEY,
+    user_id                TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    client_id              TEXT NOT NULL,
+    device_name            TEXT NOT NULL DEFAULT '',
+    refresh_hash           TEXT NOT NULL UNIQUE,
+    previous_refresh_hash  TEXT,
+    created_at             TEXT NOT NULL,
+    last_used_at           TEXT NOT NULL,
+    expires_at             TEXT NOT NULL
+  );
+  CREATE INDEX app_sessions_user ON app_sessions (user_id);
+  `,
 ];
 
 export const migrate = async () => {

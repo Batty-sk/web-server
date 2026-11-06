@@ -101,3 +101,19 @@ export const BILLING =
         if (IS_PRODUCTION) throw new Error('BILLING_PROVIDER=dev is for local development only.');
         return { provider: 'dev' as const };
       })();
+
+/* Apps (the Manuscript Mac app) ------------------------------------------ */
+
+/**
+ * Signs entitlement tokens the apps verify offline. An EC P-256 private key in
+ * PKCS#8 PEM; apps trust the matching public key from /app/jwks.json.
+ * Development generates a throwaway key at startup.
+ */
+export const ENTITLEMENT_PRIVATE_KEY = IS_PRODUCTION
+  ? required('ENTITLEMENT_PRIVATE_KEY').replace(/\\n/g, '\n')
+  : env('ENTITLEMENT_PRIVATE_KEY')?.replace(/\\n/g, '\n');
+
+/** Native apps allowed to sign in, and where they may receive the result. */
+export const APP_CLIENTS: Record<string, { name: string; redirectUris: string[] }> = {
+  'manuscript-mac': { name: 'Manuscript for Mac', redirectUris: ['manuscript://auth/callback'] },
+};

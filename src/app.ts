@@ -1,5 +1,6 @@
 import express from 'express';
 
+import { appRouter, devicesRouter } from './apps/routes.js';
 import { authRouter } from './auth/routes.js';
 import { IS_PRODUCTION } from './config.js';
 import { cors } from './http/cors.js';
@@ -33,11 +34,16 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRouter('user'));
 app.use('/me/subscription', subscriptionRouter);
 app.use('/me/invitations', invitationsRouter);
+app.use('/me/devices', devicesRouter);
 app.use('/me', express.json({ limit: '10kb' }), meRouter);
 
 /* Manuscript subscriptions ------------------------------------------------ */
 
 app.use('/billing', billingRouter);
+
+/* The Manuscript apps: sign-in and entitlement --------------------------- */
+
+app.use('/app', appRouter);
 
 /* Admin — a separate door, by invitation ------------------------------- */
 
