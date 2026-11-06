@@ -23,6 +23,7 @@ export interface Template {
   usePlaceholder: boolean;
   status: Status;
   reviewNote: string;
+  reviewedAt: string | null;
   submittedAt: string | null;
   publishedAt: string | null;
   downloads: number;
@@ -49,6 +50,7 @@ interface Row {
   use_placeholder: number;
   status: Status;
   review_note: string;
+  reviewed_at: string | null;
   submitted_at: string | null;
   published_at: string | null;
   downloads: number;
@@ -68,6 +70,7 @@ const toTemplate = (row: Row): Template => ({
   usePlaceholder: Number(row.use_placeholder) === 1,
   status: row.status,
   reviewNote: row.review_note,
+  reviewedAt: row.reviewed_at,
   submittedAt: row.submitted_at,
   publishedAt: row.published_at,
   downloads: Number(row.downloads),
